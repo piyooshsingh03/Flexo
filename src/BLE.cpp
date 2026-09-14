@@ -1,24 +1,28 @@
-#include"BLE.h"
+#include "BLE.h"
 #include "Arduino.h"
+#include "espnow_pairing.h"
+#include "nvs_pairing.h"
 
 uint32_t sampleCount = 0;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 bool streamEnable = false;
 bool sendData = false;
-BLEServer* pServer = NULL;
-BLECharacteristic* pTxCharacteristic = NULL;
-BLECharacteristic* pRxCharacteristic = NULL;
-class MyServerCallbacks: public BLEServerCallbacks
+uint8_t received_data[BUFFERSIZE] = {0};
+uint8_t received_data_len = 0;
+BLEServer *pServer = NULL;
+BLECharacteristic *pTxCharacteristic = NULL;
+BLECharacteristic *pRxCharacteristic = NULL;
+class MyServerCallbacks : public BLEServerCallbacks
 {
-    void onConnect(BLEServer* pServer)
+    void onConnect(BLEServer *pServer)
     {
         deviceConnected = true;
 
         Serial.println("BLE DEVICE CONNECTED");
     }
 
-    void onDisconnect(BLEServer* pServer)
+    void onDisconnect(BLEServer *pServer)
     {
         deviceConnected = false;
 
@@ -27,105 +31,141 @@ class MyServerCallbacks: public BLEServerCallbacks
         BLEDevice::startAdvertising();
     }
 };
-class MyCallbacks: public BLECharacteristicCallbacks
+class MyCallbacks : public BLECharacteristicCallbacks
 {
-    
-  void onWrite(BLECharacteristic *pCharacteristic)
+
+    void onWrite(BLECharacteristic *pCharacteristic)
     {
         // 1. Get the raw data and its length
-        uint8_t* rawData = pCharacteristic->getData();
+        uint8_t *data = pCharacteristic->getData();
         size_t length = pCharacteristic->getLength();
-
+        memcpy(received_data, data, length);
+        received_data_len = length;
         Serial.print("Received bytes: ");
-        for (int i = 0; i < length; i++) {
-            Serial.printf("%02X ", rawData[i]); // Prints as readable HEX (e.g., "AA 01 AA")
+        for (int i = 0; i < length; i++)
+        {
+            Serial.printf("%02X ", received_data[i]); // Prints as readable HEX (e.g., "AA 01 AA")
         }
-        Serial.println();
-
+        Serial.print("\n");
         // 2. Check length first to avoid crashes
-        if (length >= 3) 
+        if (length >= 3)
         {
-            // ================= START (AA 01 AA) =================
-            if (rawData[0] == 0xAA && rawData[1] == 0x01 && rawData[2] == 0xAA)
+            // // ================= START (AA 01 AA) =================
+            // if (received_data[0] == 0xAA && received_data[1] == 0x01 && received_data[2] == 0xBB)
+            // {
+            //     Serial.println("START CMD RECEIVED");
+            //     pTxCharacteristic->setValue(received_data, sizeof(received_data));
+            //     pTxCharacteristic->notify();
+            //     sendData = true;
+            //     sampleCount = 0;
+            // }
+            // // ================= STOP (AA 02 AA) =================
+            // else if (received_data[0] == 0xAA && received_data[1] == 0x02 && received_data[2] == 0xAA)
+            // {
+            //     sendData = false;
+            //     sampleCount = 0;
+            //     Serial.println("STOP CMD RECEIVED");
+            //     pTxCharacteristic->setValue(received_data, sizeof(received_data));
+            //     pTxCharacteristic->notify();
+            // }
+            // else
+            // {
+            //     sendInvalidAck(); // invalid command FF FF FF
+            // }
+            if (received_data[0] == 0xAA && received_data[2] == 0xBB)
             {
-                Serial.println("START CMD RECEIVED");
+                command_exicution(received_data[1]);
 
-                uint8_t ackPacket[] = {0xCC, 0x01, 0xCC};
-                pTxCharacteristic->setValue(ackPacket, 3);
-                pTxCharacteristic->notify();
-                sendData = true;
-								 sampleCount = 0;
-
+                send_data(received_data,received_data_len);
+                // Serial.println("vailid data"); // invalid size -AA
             }
-            // ================= STOP (AA 02 AA) =================
-            else if (rawData[0] == 0xAA && rawData[1] == 0x02 && rawData[2] == 0xAA)
+            else
             {
-                sendData = false;
-								sampleCount = 0;
-                Serial.println("STOP CMD RECEIVED");
-
-                uint8_t ackPacket[] = {0xCC, 0x02, 0xCC};
-                pTxCharacteristic->setValue(ackPacket, 3);
-                pTxCharacteristic->notify();
-            }
-            else 
-            {
-                sendInvalidAck();
+                sendInvalidAck(); // invalid command FF FF FF
             }
         }
-        else 
+        else
         {
-            sendInvalidAck();
+            Serial.println("INVALID Size"); // invalid size -AA
+            uint8_t ackPacket = 0xAA;
+            pTxCharacteristic->setValue(&ackPacket, 1);
+            pTxCharacteristic->notify();
         }
     }
 
     // Helper to keep code clean
-    void sendInvalidAck() {
+    void sendInvalidAck()
+    {
         Serial.println("INVALID CMD");
-        uint8_t ackPacket[] = {0xCC, 0x00, 0xCC};
-        pTxCharacteristic->setValue(ackPacket, 3);
+        uint8_t error[] = {0xFF, 0xFF, 0xFF};
+        pTxCharacteristic->setValue(error, sizeof(error));
         pTxCharacteristic->notify();
     }
 };
 
+void command_exicution(uint8_t cmd)
+{
+    switch (cmd)
+    {
+    case 0x01:
+        Serial.println("START CMD RECEIVED");
+        sendData = true;
+        sampleCount = 0;
+        break;
+    case 0x02:
+        clearPeerMAC();
+        break;
+    case 0xEE:
+        esp_restart();
+        break;
+    case 0xFF:
+        sendData = false;
+        sampleCount = 0;
+        Serial.println("STOP CMD RECEIVED");
+        break;
+
+    default:
+        Serial.println("invalid command");
+    }
+    pTxCharacteristic->setValue(received_data, received_data_len);
+    pTxCharacteristic->notify();
+}
 
 void BLE_Init()
 {
-          // ================= BLE =================
- BLEDevice::init("BP RIGHT");                                                         //////////////////device name
+    // ================= BLE =================
+    BLEDevice::init("BP RIGHT"); //////////////////device name
 
-pServer = BLEDevice::createServer();
-pServer->setCallbacks(new MyServerCallbacks());
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
 
-BLEService *pService =
-    pServer->createService(SERVICE_UUID);
+    BLEService *pService =
+        pServer->createService(SERVICE_UUID);
 
-// TX
-pTxCharacteristic =
-    pService->createCharacteristic(
-        CHARACTERISTIC_TX,
-        BLECharacteristic::PROPERTY_NOTIFY
-    );
+    // TX
+    pTxCharacteristic =
+        pService->createCharacteristic(
+            CHARACTERISTIC_TX,
+            BLECharacteristic::PROPERTY_NOTIFY);
 
-pTxCharacteristic->addDescriptor(new BLE2902());
+    pTxCharacteristic->addDescriptor(new BLE2902());
 
-// RX
-pRxCharacteristic =
-    pService->createCharacteristic(
-        CHARACTERISTIC_RX,
-        BLECharacteristic::PROPERTY_WRITE |
-        BLECharacteristic::PROPERTY_WRITE_NR
-    );
+    // RX
+    pRxCharacteristic =
+        pService->createCharacteristic(
+            CHARACTERISTIC_RX,
+            BLECharacteristic::PROPERTY_WRITE |
+                BLECharacteristic::PROPERTY_WRITE_NR);
 
-pRxCharacteristic->setCallbacks(new MyCallbacks());
+    pRxCharacteristic->setCallbacks(new MyCallbacks());
 
-pService->start();
+    pService->start();
 
-BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
 
-pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->addServiceUUID(SERVICE_UUID);
 
-pAdvertising->setScanResponse(true);
+    pAdvertising->setScanResponse(true);
 
-pAdvertising->start();
+    pAdvertising->start();
 }
