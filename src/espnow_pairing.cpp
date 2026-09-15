@@ -14,6 +14,8 @@ uint8_t peerMAC[6] = {0};
 unsigned long lastPairRequest = 0;
 uint32_t txCounter = 0;
 unsigned long lastDataSend = 0;
+uint8_t received_espNow_data[BUFFER_SIZE] = {0};
+uint8_t esp_now_data_size = 0;
 // ============================================================
 // BROADCAST MAC
 // ============================================================
@@ -172,8 +174,7 @@ void sendPairRequest()
 // SEND PAIR RESPONSE
 // ============================================================
 
-void sendPairResponse(
-    const uint8_t *mac)
+void sendPairResponse(const uint8_t *mac)
 {
     PairPacket packet;
 
@@ -304,23 +305,29 @@ void loadSavedPair()
 // RECEIVE CALLBACK
 // ============================================================
 
-void OnDataRecv(
-    const uint8_t *mac,
-    const uint8_t *data,
-    int len)
+void OnDataRecv(const uint8_t *mac, const uint8_t *data, int len)
 {
     // --------------------------------------------------------
     // Check packet length
     // --------------------------------------------------------
+    esp_now_data_size = len;
+    if (len == 0)
+    {
+        Serial.println(
+            "wrong size ");
 
-    // if (len != sizeof(PairPacket))
-    // {
-    //     Serial.println(
-    //         "Unknown packet received");
+        return;
+    }
+    memcpy(
+        &received_espNow_data,
+        data,
+        esp_now_data_size);
 
-    //     return;
-    // }
-
+    for (int i = 0; i < esp_now_data_size; i++)
+    {
+        Serial.printf("%02X ", received_espNow_data[i]); // Prints as readable HEX (e.g., "AA 01 AA")
+    }
+    Serial.print("\n");
     PairPacket packet;
 
     memcpy(
@@ -585,28 +592,10 @@ void OnDataRecv(
         Serial.println();
     }
     // ============================================================
-    // COUNTER DATA
+    // Receive  DATA
     // ============================================================
-    DataPacket pack;
-
-    pack.type = DATA_EXCHANGE;
-    pack.counter = txCounter;
-    if (packet.type == DATA_EXCHANGE)
+    else if (packet.type == DATA_EXCHANGE)
     {
-        if (len != sizeof(DataPacket))
-        {
-            Serial.println("Invalid DATA_COUNTER packet");
-
-            return;
-        }
-
-        DataPacket packet;
-
-        memcpy(
-            &packet,
-            data,
-            sizeof(DataPacket));
-
         Serial.println();
         Serial.println("==============================");
         Serial.println("DATA RECEIVED");
@@ -617,10 +606,21 @@ void OnDataRecv(
 
         Serial.println();
 
-        Serial.print("Counter: ");
-        Serial.println(packet.counter);
+        // Check exact packet size
+        // if (len != sizeof(DataPacket))
+        // {
+        //     Serial.println("ERROR: Invalid DATA packet size");
+        //     return;
+        // }
+    }
 
-        return;
+    // ========================================================
+    // UNKNOWN PACKET
+    // ========================================================
+
+    else
+    {
+        Serial.println("Unknown packet type");
     }
 }
 
@@ -762,7 +762,7 @@ void sendCounter()
 
 void send_data(uint8_t *pdata, uint8_t len)
 {
-    esp_err_t result = esp_now_send(peerMAC,pdata, len);
+    esp_err_t result = esp_now_send(peerMAC, pdata, len);
 
     if (result == ESP_OK)
     {
@@ -772,5 +772,55 @@ void send_data(uint8_t *pdata, uint8_t len)
     {
         Serial.print("Send failed, error: ");
         Serial.println(result);
+    }
+}
+
+void paired_status(void)
+{
+    if (!paired)
+    {
+        if (millis() - lastPairRequest >= 2000)
+        {
+            lastPairRequest = millis();
+
+            sendPairRequest();
+        }
+    }
+    // ========================================================
+    // PAIRED
+    // ========================================================
+
+    else
+    {
+        static bool printed = false;
+
+        if (!printed)
+        {
+            printed = true;
+
+            Serial.println();
+            Serial.println(
+                "NORMAL MODE");
+
+            Serial.print(
+                "Partner MAC: ");
+
+            printMAC(peerMAC);
+
+            Serial.println();
+
+            Serial.println(
+                "Pairing stopped.");
+        }
+        // ----------------------------------------------------
+        // SEND COUNTER
+        // ----------------------------------------------------
+
+        // if (millis() - lastDataSend >= 1000)
+        // {
+        //     lastDataSend = millis();
+
+        //     sendCounter();
+        // }
     }
 }

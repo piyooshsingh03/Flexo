@@ -10,7 +10,6 @@ volatile bool ADS1_dataReady = false;
 float Horiz_Angle = 0, Verti_Angle = 0;
 
 float sample[2] = {0, 0};
-void paired_status(void);
 static uint8_t read_buffer[ADS2_TRANSFER_SIZE];
 static volatile bool ads2_irq_pending = false;
 static volatile uint32_t ads2_lastTickISR = 0; // tiny debounce window
@@ -571,7 +570,7 @@ void setup()
 	/*ESP32-S3-WROOM-1 (16MB flash 8MB RAM) */
 
 	Serial.begin(115200); //     43 Tx ,44 Rx  console port
-	// espnow_setup();
+	espnow_setup();
 
 	BLE_Init();
 
@@ -606,7 +605,7 @@ void setup()
 
 void loop()
 {
-	// paired_status();
+	paired_status();
 	/* I2C Data receing interupt calling from two axis */
 	if (ads2_irq_pending)
 	{
@@ -671,53 +670,4 @@ void loop()
 	}
 }
 
-void paired_status(void)
-{
-	if (!paired)
-	{
-		if (millis() - lastPairRequest >= 2000)
-		{
-			lastPairRequest = millis();
-
-			sendPairRequest();
-		}
-	}
-	// ========================================================
-	// PAIRED
-	// ========================================================
-
-	else
-	{
-		static bool printed = false;
-
-		if (!printed)
-		{
-			printed = true;
-
-			Serial.println();
-			Serial.println(
-				"NORMAL MODE");
-
-			Serial.print(
-				"Partner MAC: ");
-
-			printMAC(peerMAC);
-
-			Serial.println();
-
-			Serial.println(
-				"Pairing stopped.");
-		}
-		// ----------------------------------------------------
-		// SEND COUNTER
-		// ----------------------------------------------------
-
-		// if (millis() - lastDataSend >= 1000)
-		// {
-		//     lastDataSend = millis();
-
-		//     sendCounter();
-		// }
-	}
-}
 /* End of Loop */

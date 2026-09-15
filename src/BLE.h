@@ -10,13 +10,14 @@
 extern uint32_t sampleCount;
 
 extern BLEServer* pServer;
+extern BLEService *pService;
 extern BLECharacteristic* pTxCharacteristic ;
 extern BLECharacteristic* pRxCharacteristic;
 extern bool deviceConnected;
 extern bool oldDeviceConnected;
 extern bool streamEnable;
 extern bool sendData;
-
+extern bool BLE_Ready;
 extern uint8_t received_data[BUFFERSIZE];
 extern uint8_t received_data_len;
 
@@ -27,5 +28,5 @@ extern uint8_t received_data_len;
 
 void BLE_Init();
 void command_exicution(uint8_t cmd);
-
+void BLE_Deinit();
 #endif

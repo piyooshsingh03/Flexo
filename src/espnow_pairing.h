@@ -13,7 +13,7 @@
 #define PAIR_RESPONSE  2
 #define PAIR_CONFIRM   3
 #define DATA_EXCHANGE  4
-
+#define BUFFER_SIZE    50
 // ============================================================
 // PAIRING PACKET
 // ============================================================
@@ -34,6 +34,8 @@ typedef struct
     uint32_t counter;
 } DataPacket;
 
+extern uint8_t received_espNow_data[BUFFER_SIZE];
+extern uint8_t esp_now_data_size;
 // ============================================================
 // GLOBAL VARIABLES
 // ============================================================
@@ -97,4 +99,6 @@ void send_Data(uint16_t data);
 void sendCounter();
 void espnow_setup(void);
 void send_data(uint8_t *pdata,uint8_t len);
+void paired_status(void);
+
 #endif
